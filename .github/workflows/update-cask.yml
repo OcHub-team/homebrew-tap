@@ -28,7 +28,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          release_json="$(gh api repos/Sleepstars/OcHub/releases/latest)"
+          release_json="$(gh api repos/OcHub-team/OcHub/releases/latest)"
           tag="$(jq -er '.tag_name' <<<"${release_json}")"
           version="${tag#v}"
           test "${tag}" = "v${version}"
