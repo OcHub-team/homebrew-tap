@@ -1,7 +1,15 @@
 name: Update OcHub cask
 
 on:
+  repository_dispatch:
+    types:
+      - ochub_release_published
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing OcHub release tag; leave blank to use the latest release
+        required: false
+        type: string
   schedule:
     - cron: "37 4 * * *"
 
@@ -24,12 +32,26 @@ jobs:
       - name: Update version and checksums
         env:
           GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ github.event.client_payload.tag || inputs.tag || '' }}
         shell: bash
         run: |
           set -euo pipefail
 
-          release_json="$(gh api repos/OcHub-team/OcHub/releases/latest)"
+          if [ -n "${REQUESTED_TAG}" ]; then
+            [[ "${REQUESTED_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]
+            release_json="$(
+              gh api "repos/OcHub-team/OcHub/releases/tags/${REQUESTED_TAG}"
+            )"
+          else
+            release_json="$(gh api repos/OcHub-team/OcHub/releases/latest)"
+          fi
+
+          test "$(jq -er '.draft' <<<"${release_json}")" = "false"
+          test "$(jq -er '.prerelease' <<<"${release_json}")" = "false"
           tag="$(jq -er '.tag_name' <<<"${release_json}")"
+          if [ -n "${REQUESTED_TAG}" ]; then
+            test "${tag}" = "${REQUESTED_TAG}"
+          fi
           version="${tag#v}"
           test "${tag}" = "v${version}"
           [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]
