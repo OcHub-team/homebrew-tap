@@ -1,9 +1,9 @@
 cask "ochub" do
   arch arm: "aarch64", intel: "x64"
 
-  version "0.3.1"
-  sha256 arm:   "8706d488e48d442c47ae6d226bbeee8afbce66233f879533d6726fd736b8ed9d",
-         intel: "a73a15a2f7c59233a5360b9f7ff36cae8321ac69dad28f8a83b7388c3559751c"
+  version "0.4.0"
+  sha256 arm:   "0785206b32a5c5bb309f3d36de5d39c45e7711420a00a53cf22c069386229427",
+         intel: "e39fab61de621bdab27f9623c3a580007d2e6602d1280afaa6d9628d5f21d28c"
 
   url "https://github.com/OcHub-team/OcHub/releases/download/v#{version}/OcHub_#{version}_#{arch}.dmg"
   name "OcHub"
