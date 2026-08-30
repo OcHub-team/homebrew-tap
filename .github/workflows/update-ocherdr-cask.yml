@@ -1,0 +1,130 @@
+name: Update OcHerdr cask
+
+on:
+  repository_dispatch:
+    types:
+      - ocherdr_release_published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing OcHerdr release tag; leave blank to use the latest release
+        required: false
+        type: string
+  schedule:
+    - cron: "52 4 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-ocherdr-cask
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Update from the latest OcHerdr release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out tap
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Update version and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ github.event.client_payload.tag || inputs.tag || '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -n "${REQUESTED_TAG}" ]; then
+            [[ "${REQUESTED_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]
+            release_json="$(
+              gh api "repos/OcHub-team/OcHerdr/releases/tags/${REQUESTED_TAG}"
+            )"
+          else
+            error_file="$(mktemp "${RUNNER_TEMP}/ocherdr-release-error.XXXXXX")"
+            if ! release_json="$(
+              gh api repos/OcHub-team/OcHerdr/releases/latest 2>"${error_file}"
+            )"; then
+              if grep -q 'HTTP 404' "${error_file}"; then
+                echo "OcHerdr has no published release yet; nothing to update."
+                exit 0
+              fi
+              cat "${error_file}" >&2
+              exit 1
+            fi
+          fi
+
+          test "$(jq -er '.draft' <<<"${release_json}")" = "false"
+          test "$(jq -er '.prerelease' <<<"${release_json}")" = "false"
+          tag="$(jq -er '.tag_name' <<<"${release_json}")"
+          if [ -n "${REQUESTED_TAG}" ]; then
+            test "${tag}" = "${REQUESTED_TAG}"
+          fi
+          version="${tag#v}"
+          test "${tag}" = "v${version}"
+          [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]
+
+          arm_name="OcHerdr_${version}_aarch64.dmg"
+          intel_name="OcHerdr_${version}_x64.dmg"
+          arm_url="$(
+            jq -er --arg name "${arm_name}" \
+              '[.assets[] | select(.name == $name) | .browser_download_url] |
+               if length == 1 then .[0] else error("missing or duplicate ARM64 DMG") end' \
+              <<<"${release_json}"
+          )"
+          intel_url="$(
+            jq -er --arg name "${intel_name}" \
+              '[.assets[] | select(.name == $name) | .browser_download_url] |
+               if length == 1 then .[0] else error("missing or duplicate Intel DMG") end' \
+              <<<"${release_json}"
+          )"
+
+          download_dir="$(mktemp -d "${RUNNER_TEMP}/ocherdr-homebrew.XXXXXX")"
+          curl --fail --location --silent --show-error \
+            --output "${download_dir}/${arm_name}" "${arm_url}"
+          curl --fail --location --silent --show-error \
+            --output "${download_dir}/${intel_name}" "${intel_url}"
+          arm_sha="$(sha256sum "${download_dir}/${arm_name}" | cut -d ' ' -f 1)"
+          intel_sha="$(sha256sum "${download_dir}/${intel_name}" | cut -d ' ' -f 1)"
+
+          ruby - "${version}" "${arm_sha}" "${intel_sha}" <<'RUBY'
+          path, version, arm_sha, intel_sha = "Casks/ocherdr.rb", *ARGV
+          template = <<~'CASK'
+            cask "ocherdr" do
+              arch arm: "aarch64", intel: "x64"
+
+              version "__VERSION__"
+              sha256 arm:   "__ARM_SHA__",
+                     intel: "__INTEL_SHA__"
+
+              url "https://github.com/OcHub-team/OcHerdr/releases/download/v#{version}/OcHerdr_#{version}_#{arch}.dmg"
+              name "OcHerdr"
+              desc "Native macOS GUI client for Herdr"
+              homepage "https://github.com/OcHub-team/OcHerdr"
+
+              depends_on macos: :sonoma
+
+              app "OcHerdr.app"
+            end
+          CASK
+          content = template
+            .sub("__VERSION__", version)
+            .sub("__ARM_SHA__", arm_sha)
+            .sub("__INTEL_SHA__", intel_sha)
+          File.write(path, content)
+          RUBY
+
+          ruby -c Casks/ocherdr.rb
+          git diff --check
+          if git diff --quiet; then
+            echo "OcHerdr ${version} is already current."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/ocherdr.rb
+          git commit -m "Update OcHerdr cask to ${version}"
+          git push
