@@ -1,9 +1,9 @@
 cask "ocherdr" do
   arch arm: "aarch64", intel: "x64"
 
-  version "0.2.13"
-  sha256 arm:   "89067f13e6e960cb61cee7ce9ab4ec90f14ac8d630f4f20cc0f3e363cce72054",
-         intel: "53be26cc60da1e3c088f44dee0c15639f845bcede9ec942872550063291e3cdf"
+  version "0.2.14"
+  sha256 arm:   "4d6463170f694fd658af60b13795c66624dc8ba01c14546db7e16badcbb83004",
+         intel: "7527f2a1834ae378d0cc7a2c4845caf72be34f4df158e4c6725f3770c3b937ff"
 
   url "https://github.com/OcHub-team/OcHerdr/releases/download/v#{version}/OcHerdr_#{version}_#{arch}.dmg"
   name "OcHerdr"
